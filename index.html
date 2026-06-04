@@ -4,9 +4,11 @@
   <meta charset="UTF-8">
   <title>Base Contract Deployer</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.0/dist/ethers.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@coinbase/wallet-sdk@4/dist/index.js"></script>
   <style>
     body { font-family: Arial, sans-serif; max-width: 600px; margin: 60px auto; background: #0f172a; color: #e2e8f0; padding: 20px; }
-    h1 { color: #3b82f6; }
+    h1 { color: #3b82f6; margin-bottom: 4px; }
+    p { color: #94a3b8; margin-top: 4px; }
     button { background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; margin: 8px 4px; }
     button:disabled { background: #334155; cursor: not-allowed; }
     button:hover:not(:disabled) { background: #2563eb; }
@@ -14,20 +16,14 @@
     .ok { color: #22c55e; }
     .err { color: #ef4444; }
     .addr { color: #60a5fa; font-weight: bold; }
-    #log { max-height: 300px; overflow-y: auto; }
-    .wallet-btn { display: block; width: 100%; text-align: left; margin: 6px 0; padding: 12px 16px; }
-    #walletList { display: none; }
+    #log { max-height: 300px; overflow-y: auto; font-size: 13px; }
   </style>
 </head>
 <body>
   <h1>Base Mainnet — Deploy Contrato</h1>
+  <p>Usa tu Coinbase Wallet (extensión o móvil via QR)</p>
 
-  <div id="walletList" class="box">
-    <p style="margin:0 0 10px">Elige tu wallet:</p>
-    <div id="walletBtns"></div>
-  </div>
-
-  <button id="btnConnect">Conectar Wallet</button>
+  <button id="btnConnect">Conectar Coinbase Wallet</button>
 
   <div class="box" id="info" style="display:none">
     <div>Red: <span id="network"></span></div>
@@ -36,7 +32,7 @@
   </div>
 
   <button id="btnDeploy" disabled>Deploar Contrato en Base</button>
-  <div style="color:#94a3b8; font-size:13px;">Solo gas (~0.000035 ETH) — sin fee de servicio</div>
+  <div style="color:#94a3b8; font-size:13px; margin-bottom:12px;">Solo gas (~0.000035 ETH) — sin fee de servicio</div>
 
   <div class="box" id="log"></div>
 
@@ -44,64 +40,30 @@
     const BASE_CHAIN_ID = 8453n;
     const SIMPLE_BYTECODE = "0x6080604052348015600f57600080fd5b50603f80601d6000396000f3fe6080604052600080fdfea2646970667358221220a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a064736f6c63430008140033";
 
-    let provider, signer, chainId;
+    let provider, signer;
     let deployCount = 0;
-    const detectedProviders = [];
 
     function log(msg, cls = '') {
       const d = document.getElementById('log');
-      d.innerHTML += `<div class="${cls}">${msg}</div>`;
+      d.innerHTML += `<div class="${cls}">${new Date().toLocaleTimeString()} — ${msg}</div>`;
       d.scrollTop = d.scrollHeight;
     }
 
-    // EIP-6963: detectar todas las wallets disponibles
-    window.addEventListener('eip6963:announceProvider', (event) => {
-      const { info, provider: p } = event.detail;
-      if (!detectedProviders.find(x => x.info.uuid === info.uuid)) {
-        detectedProviders.push({ info, provider: p });
-        log(`Wallet detectada: ${info.name}`);
-      }
+    // Inicializar Coinbase Wallet SDK apuntando a Base mainnet
+    const sdk = new CoinbaseWalletSDK({
+      appName: 'Base Contract Deployer',
+      appChainIds: [8453]
     });
-    window.dispatchEvent(new Event('eip6963:requestProvider'));
+    const cbProvider = sdk.makeWeb3Provider();
 
-    document.getElementById('btnConnect').addEventListener('click', () => {
-      const list = document.getElementById('walletList');
-      const btns = document.getElementById('walletBtns');
-      btns.innerHTML = '';
-
-      // Mostrar wallets EIP-6963 detectadas
-      if (detectedProviders.length > 0) {
-        detectedProviders.forEach(({ info, provider: p }) => {
-          const btn = document.createElement('button');
-          btn.className = 'wallet-btn';
-          btn.innerHTML = `${info.icon ? `<img src="${info.icon}" style="width:20px;vertical-align:middle;margin-right:8px">` : ''} ${info.name}`;
-          btn.addEventListener('click', () => connectWith(p, info.name));
-          btns.appendChild(btn);
-        });
-      }
-
-      // Siempre mostrar opción window.ethereum como fallback
-      if (window.ethereum) {
-        const btn = document.createElement('button');
-        btn.className = 'wallet-btn';
-        btn.textContent = 'Coinbase Wallet / Otra (window.ethereum)';
-        btn.addEventListener('click', () => connectWith(window.ethereum, 'window.ethereum'));
-        btns.appendChild(btn);
-      }
-
-      list.style.display = btns.children.length > 0 ? 'block' : 'none';
-      if (btns.children.length === 0) log('No se detectó ninguna wallet.', 'err');
-    });
-
-    async function connectWith(rawProvider, name) {
-      document.getElementById('walletList').style.display = 'none';
+    document.getElementById('btnConnect').addEventListener('click', async () => {
       try {
-        log(`Conectando con ${name}...`);
-        provider = new ethers.BrowserProvider(rawProvider);
+        log('Iniciando conexión con Coinbase Wallet...');
+        provider = new ethers.BrowserProvider(cbProvider);
         await provider.send("eth_requestAccounts", []);
         signer = await provider.getSigner();
         const network = await provider.getNetwork();
-        chainId = network.chainId;
+        const chainId = network.chainId;
         const addr = await signer.getAddress();
         const bal = await provider.getBalance(addr);
 
@@ -110,19 +72,19 @@
             ? `<span class="ok">Base Mainnet ✅ (${chainId})</span>`
             : `<span class="err">Chain ID ${chainId} — necesitas Base Mainnet (8453)</span>`;
         document.getElementById('wallet').textContent = addr;
-        document.getElementById('balance').textContent = ethers.formatEther(bal);
+        document.getElementById('balance').textContent = parseFloat(ethers.formatEther(bal)).toFixed(6) + ' ETH';
         document.getElementById('info').style.display = 'block';
 
         if (chainId === BASE_CHAIN_ID) {
           document.getElementById('btnDeploy').disabled = false;
-          log(`✅ Conectado en Base Mainnet con ${name}`, 'ok');
+          log('Conectado en Base Mainnet. Listo para deploy.', 'ok');
         } else {
-          log(`Estás en chain ${chainId}. Cambia a Base Mainnet en tu wallet.`, 'err');
+          log(`Chain incorrecto (${chainId}). Cambia a Base en tu wallet.`, 'err');
         }
       } catch (e) {
         log('Error: ' + e.message, 'err');
       }
-    }
+    });
 
     document.getElementById('btnDeploy').addEventListener('click', async () => {
       try {
@@ -131,7 +93,7 @@
         document.getElementById('btnDeploy').disabled = true;
         const factory = new ethers.ContractFactory([], SIMPLE_BYTECODE, signer);
         const contract = await factory.deploy();
-        log(`TX enviada: ${contract.deploymentTransaction().hash}`);
+        log(`TX: ${contract.deploymentTransaction().hash}`);
         await contract.waitForDeployment();
         const addr = await contract.getAddress();
         log(`✅ Contrato #${deployCount}: <span class="addr">${addr}</span>`, 'ok');
