@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Base Contract Deployer</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.0/dist/ethers.umd.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 60px auto; background: #0f172a; color: #e2e8f0; padding: 20px; }
+    h1 { color: #3b82f6; }
+    button { background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; margin: 8px 0; }
+    button:disabled { background: #334155; cursor: not-allowed; }
+    button:hover:not(:disabled) { background: #2563eb; }
+    .box { background: #1e293b; border-radius: 10px; padding: 16px; margin: 12px 0; word-break: break-all; }
+    .ok { color: #22c55e; }
+    .err { color: #ef4444; }
+    .addr { color: #60a5fa; font-weight: bold; }
+    #log { max-height: 300px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <h1>Base Mainnet — Deploy Contrato</h1>
+
+  <button id="btnConnect">Conectar Wallet</button>
+
+  <div class="box" id="info" style="display:none">
+    <div>Red: <span id="network"></span></div>
+    <div>Wallet: <span id="wallet"></span></div>
+    <div>Balance: <span id="balance"></span> ETH</div>
+  </div>
+
+  <button id="btnDeploy" disabled>Deploar Contrato en Base</button>
+  <div style="color:#94a3b8; font-size:13px;">Costo estimado: ~0.000035 ETH por deploy (solo gas)</div>
+
+  <div class="box" id="log"></div>
+
+  <script>
+    const BASE_CHAIN_ID = 8453n;
+
+    // Contrato simple: almacena un numero, sin constructor, muy barato de deploy
+    const BYTECODE = "0x6080604052348015600f57600080fd5b5060808061001e6000396000f3fe6080604052348015600f57600080fd5b506004361060325760003560e01c80632e64cec11460375780636057361d146053575b600080fd5b600054604051908152602001604051809103905f0a60440b60405180910390f35b6063605e3660046065565b005b600055565b5f60208284031215607557600080fd5b503591905056fea2646970667358221220c1b0c1b0c1b0c1b0c1b0c1b0c1b0c1b0c1b0c1b0c1b0c1b0c1b0c1b064736f6c63430008140033";
+
+    // Bytecode alternativo más simple (solo recibe y guarda nada)
+    const SIMPLE_BYTECODE = "0x6080604052348015600f57600080fd5b50603f80601d6000396000f3fe6080604052600080fdfea2646970667358221220a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a064736f6c63430008140033";
+
+    let provider, signer, chainId;
+    let deployCount = 0;
+
+    function log(msg, cls = '') {
+      const d = document.getElementById('log');
+      d.innerHTML += `<div class="${cls}">${msg}</div>`;
+      d.scrollTop = d.scrollHeight;
+    }
+
+    document.getElementById('btnConnect').addEventListener('click', async () => {
+      try {
+        if (!window.ethereum) { log('No se detectó wallet. Instala Coinbase Wallet.', 'err'); return; }
+        provider = new ethers.BrowserProvider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        signer = await provider.getSigner();
+        const network = await provider.getNetwork();
+        chainId = network.chainId;
+        const addr = await signer.getAddress();
+        const bal = await provider.getBalance(addr);
+
+        document.getElementById('network').innerHTML =
+          chainId === BASE_CHAIN_ID
+            ? `<span class="ok">Base Mainnet ✅ (${chainId})</span>`
+            : `<span class="err">ADVERTENCIA: Chain ID ${chainId} — necesitas Base Mainnet (8453)</span>`;
+        document.getElementById('wallet').textContent = addr;
+        document.getElementById('balance').textContent = ethers.formatEther(bal);
+        document.getElementById('info').style.display = 'block';
+
+        if (chainId === BASE_CHAIN_ID) {
+          document.getElementById('btnDeploy').disabled = false;
+          log('Wallet conectada en Base Mainnet. Listo para deploy.', 'ok');
+        } else {
+          log(`Estás en chain ${chainId}, no Base. Cambia a Base en tu wallet.`, 'err');
+        }
+      } catch (e) {
+        log('Error: ' + e.message, 'err');
+      }
+    });
+
+    document.getElementById('btnDeploy').addEventListener('click', async () => {
+      try {
+        deployCount++;
+        log(`Deployando contrato #${deployCount}...`);
+        document.getElementById('btnDeploy').disabled = true;
+
+        const factory = new ethers.ContractFactory([], SIMPLE_BYTECODE, signer);
+        const contract = await factory.deploy();
+        log(`TX enviada: ${contract.deploymentTransaction().hash}`);
+        await contract.waitForDeployment();
+        const addr = await contract.getAddress();
+        log(`✅ Contrato #${deployCount} desplegado: <span class="addr">${addr}</span>`, 'ok');
+        document.getElementById('btnDeploy').disabled = false;
+      } catch (e) {
+        log('Error: ' + e.message, 'err');
+        document.getElementById('btnDeploy').disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
