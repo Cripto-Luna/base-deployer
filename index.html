@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Base Contract Deployer</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.0/dist/ethers.umd.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; max-width: 600px; margin: 60px auto; background: #0f172a; color: #e2e8f0; padding: 20px; }
     h1 { color: #3b82f6; margin-bottom: 4px; }
@@ -19,9 +20,9 @@
 </head>
 <body>
   <h1>Base Mainnet — Deploy Contrato</h1>
-  <p>Conecta tu Base Smart Wallet (sin extensión)</p>
+  <p>Conecta MetaMask en Base mainnet</p>
 
-  <button id="btnConnect">Conectar Base Smart Wallet</button>
+  <button id="btnConnect">Conectar MetaMask</button>
 
   <div class="box" id="info" style="display:none">
     <div>Red: <span id="network"></span></div>
@@ -34,10 +35,7 @@
 
   <div class="box" id="log"></div>
 
-  <script type="module">
-    import { CoinbaseWalletSDK } from 'https://esm.sh/@coinbase/wallet-sdk@4';
-    import { ethers } from 'https://esm.sh/ethers@6';
-
+  <script>
     const BASE_CHAIN_ID = 8453n;
     const SIMPLE_BYTECODE = "0x6080604052348015600f57600080fd5b50603f80601d6000396000f3fe6080604052600080fdfea2646970667358221220a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a064736f6c63430008140033";
 
@@ -50,39 +48,45 @@
       d.scrollTop = d.scrollHeight;
     }
 
-    // Coinbase Wallet SDK v4 — Smart Wallet only (no extensión, no QR)
-    const sdk = new CoinbaseWalletSDK({
-      appName: 'Base Contract Deployer',
-      appChainIds: [8453],
-      preference: { options: 'smartWalletOnly' }
-    });
-
-    const cbProvider = sdk.makeWeb3Provider();
-
     document.getElementById('btnConnect').addEventListener('click', async () => {
       try {
-        log('Abriendo Base Smart Wallet...');
-        provider = new ethers.BrowserProvider(cbProvider);
+        if (!window.ethereum) { log('MetaMask no detectado.', 'err'); return; }
+
+        // Pedir cambio a Base mainnet si es necesario
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0x2105' }], // 8453 en hex
+          });
+        } catch (sw) {
+          if (sw.code === 4902) {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{ chainId: '0x2105', chainName: 'Base', nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 }, rpcUrls: ['https://mainnet.base.org'], blockExplorerUrls: ['https://basescan.org'] }]
+            });
+          }
+        }
+
+        provider = new ethers.BrowserProvider(window.ethereum);
         await provider.send('eth_requestAccounts', []);
         signer = await provider.getSigner();
         const network = await provider.getNetwork();
-        const chainId = network.chainId;
         const addr = await signer.getAddress();
         const bal = await provider.getBalance(addr);
 
         document.getElementById('network').innerHTML =
-          chainId === BASE_CHAIN_ID
-            ? `<span class="ok">Base Mainnet ✅ (${chainId})</span>`
-            : `<span class="err">Chain ${chainId} — necesitas Base Mainnet (8453)</span>`;
+          network.chainId === BASE_CHAIN_ID
+            ? `<span class="ok">Base Mainnet ✅</span>`
+            : `<span class="err">Chain ${network.chainId} — cambia a Base en MetaMask</span>`;
         document.getElementById('wallet').textContent = addr;
         document.getElementById('balance').textContent = parseFloat(ethers.formatEther(bal)).toFixed(6) + ' ETH';
         document.getElementById('info').style.display = 'block';
 
-        if (chainId === BASE_CHAIN_ID) {
+        if (network.chainId === BASE_CHAIN_ID) {
           document.getElementById('btnDeploy').disabled = false;
-          log('✅ Conectado en Base Mainnet. Listo para deploy.', 'ok');
+          log('✅ MetaMask conectado en Base Mainnet. Listo.', 'ok');
         } else {
-          log(`Chain incorrecto (${chainId}). Cambia a Base en tu wallet.`, 'err');
+          log('Cambia la red a Base en MetaMask y vuelve a conectar.', 'err');
         }
       } catch (e) {
         log('Error: ' + e.message, 'err');
